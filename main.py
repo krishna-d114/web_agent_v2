@@ -1,6 +1,8 @@
 import asyncio
 import time
 import uuid
+import json
+
 
 from agent.mcp_client import mcp_session,get_openai_tools,call_mcp_tool
 from agent.llm import get_next_action,SYSTEM_PROMPT
@@ -29,7 +31,7 @@ async def run_task(task:str,arm:str = "no_memory"):
             
             tool_call = assistant_msg.tool_calls[0]
             name = tool_call.function.name
-            arguments = eval(tool_call.function.arguments)if isinstance(
+            arguments = json.loads(tool_call.function.arguments)if isinstance(
                 tool_call.function.arguments,str
             )else tool_call.function.arguments
 

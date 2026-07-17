@@ -11,7 +11,7 @@ client = OpenAI(
 )
 
 # Adjust to whatever cheap, tool-calling-capable model you settle on.
-MODEL = "anthropic/claude-3.5-haiku"
+MODEL = "tencent/hy3:free"
 
 SYSTEM_PROMPT = """You are a browser automation agent. You complete tasks by \
 calling the provided browser tools one at a time.
