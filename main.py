@@ -9,7 +9,7 @@ from agent.llm import get_next_action,SYSTEM_PROMPT
 from agent.logger import RunLogger
 
 MAX_STEPS = 15
-TASK = "Play supernatural by newjeans on Youtube"
+TASK = input("tell the task: ")
 
 async def run_task(task:str,arm:str = "no_memory"):
     run_id = f"{int(time.time())}_{uuid.uuid4().hex[:6]}"
@@ -26,9 +26,11 @@ async def run_task(task:str,arm:str = "no_memory"):
             assistant_msg = get_next_action(messages,tools)
             
             if not assistant_msg.tool_calls:
-                print(f"[step {step}] No tool call returned,stopping")
-                logger.finalize(False,"LLM returned no tool calls")
-            
+                print(f"[step {step}] No tool call returned, stopping")
+                logger.finalize(False, "LLM returned no tool calls")
+                await session.call_tool("browser_close", arguments={})
+                return
+                        
             tool_call = assistant_msg.tool_calls[0]
             name = tool_call.function.name
             arguments = json.loads(tool_call.function.arguments)if isinstance(
