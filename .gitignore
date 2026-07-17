@@ -1,0 +1,9 @@
+venv/
+__pycache__/
+.env
+runs/
+memory/short_term/
+memory/long_term.txt
+node_modules/
+package-lock.json
+*.log.playwright-mcp/
