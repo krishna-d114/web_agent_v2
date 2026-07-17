@@ -7,3 +7,5 @@ memory/long_term.txt
 node_modules/
 package-lock.json
 *.log.playwright-mcp/
+.playwright-mcp/
+agent/.playwright-mcp/

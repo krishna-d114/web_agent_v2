@@ -23,7 +23,7 @@ class RunLogger:
         })
     
     def finalize(self,success:bool,reason:str):
-        elaspsed : time.time() - self.start_time
+        elapsed  = time.time() - self.start_time
         
         summary = {
             "task": self.task,
