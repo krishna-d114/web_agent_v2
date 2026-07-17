@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from mcp import ClientSession, StdioServerParameters
-from mcp.client.session import stdio_client
+from mcp.client.stdio import stdio_client
 
 SERVER_PARAMS = StdioServerParameters(
     command = "npx",
@@ -36,7 +36,7 @@ async def get_openai_tools(session: ClientSession)->list[dict]:
     """Fetches MCP tools and converts them, filtering out excluded ones."""
     result = await session.list_tools()
     tools = [
-        mcp_tool_to_openai_scheme(t)
+        mcp_tool_to_openai_schema(t)
         for t in result.tools
         if t.name not in EXCLUDED_TOOLS
     ]
