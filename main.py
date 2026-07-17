@@ -50,6 +50,10 @@ async def run_task(task:str,arm:str = "no_memory"):
                     arguments.get("reason", ""),
                 )
                 print(f"\nDone. success={summary['success']} steps={summary['num_steps']}")
+
+                if summary["success"]:
+                    input("\nPress Enter to close the browser...")
+
                 await session.call_tool("browser_close", arguments={})
                 return
 
