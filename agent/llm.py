@@ -42,4 +42,4 @@ def get_next_action(messages: list[dict], tools: list[dict]):
         temperature=0,
         extra_body={"reasoning": {"exclude": True}},
     )
-    return response.choices[0].message
+    return response.choices[0].message,response.usage.total_tokens

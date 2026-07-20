@@ -23,7 +23,7 @@ async def run_task(task:str,arm:str = "no_memory"):
         ]
 
         for step in range(1,MAX_STEPS+1):
-            assistant_msg = get_next_action(messages,tools)
+            assistant_msg,tokens_used = get_next_action(messages,tools)
             
             if not assistant_msg.tool_calls:
                 print(f"[step {step}] No tool call returned, stopping")
@@ -60,7 +60,7 @@ async def run_task(task:str,arm:str = "no_memory"):
                 return
 
             result_text = await call_mcp_tool(session,name,arguments)
-            logger.log_step(step,name,arguments,result_text)
+            logger.log_step(step,name,arguments,result_text,tokens_used = tokens_used)
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
