@@ -23,7 +23,7 @@ def get_memory_index(task:str)->str:
         return "(no relevant past experience found)"
     
     matches = []
-    for lin in LONG_TERM_PATH.read_text(encoding = "utf-8").splitlines():
+    for line in LONG_TERM_PATH.read_text(encoding = "utf-8").splitlines():
         if not line.strip():
             continue
         
@@ -61,7 +61,7 @@ def save_skill(task:str,site:str,skill_name:str,skill_type:str,content:str)->str
     site_dir.mkdir(parents = True,exist_ok = True)
     
     skill_path = site_dir/safe_skill_name
-    skill_path.path.write_text(content,encoding = "utf-8")
+    skill_path.write_text(content,encoding = "utf-8")
 
     relative_path = f"{site}/{safe_skill_name}"
     index_line = (
