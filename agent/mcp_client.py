@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 import re
+import yaml
 
 SERVER_PARAMS = StdioServerParameters(
     command="npx",
@@ -11,97 +12,175 @@ SERVER_PARAMS = StdioServerParameters(
 EXCLUDED_TOOLS = {"browser_run_code_unsafe"}
 
 
+import re
+import yaml
+
 class DOMCompressor:
-    """Fast regex-based DOM downsampling. No external deps."""
-
-    INTERACTIVE = {'a', 'button', 'input', 'select', 'textarea', 'option',
-                   'details', 'dialog', 'form', 'label'}
-    CONTENT = {'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'pre',
-               'code', 'table', 'tr', 'td', 'th', 'ul', 'ol', 'li', 'strong', 'b', 'em', 'i'}
-    NOISE = {'script', 'style', 'noscript', 'meta', 'link', 'template', 'head', 'base',
-             'source', 'track', 'param', 'area', 'svg', 'canvas', 'video', 'audio', 'iframe'}
-
-    KEEP_ATTRS = {'href', 'src', 'alt', 'title', 'type', 'name', 'value', 'placeholder',
-                  'aria-label', 'role', 'for', 'action', 'method', 'id', 'class'}
-
-    def __init__(self, max_tokens=6000):
+    """Compress Playwright MCP YAML accessibility tree snapshots."""
+    
+    def __init__(self, max_tokens=5000):
         self.max_tokens = max_tokens
         self.ref_counter = 0
-
-    def compress(self, html: str) -> str:
-        self.ref_counter = 0
-        html = self._strip_noise(html)
-        lines = self._extract_interactive(html)
-        lines += self._extract_content(html)
-        return self._finalize(lines)
-
-    def _strip_noise(self, html: str) -> str:
-        html = re.sub(r'<head[^>]*>.*?</head>', '', html, flags=re.DOTALL | re.I)
-        for tag in self.NOISE:
-            html = re.sub(rf'<{tag}\b[^>]*>.*?</{tag}>', '', html, flags=re.DOTALL | re.I)
-            html = re.sub(rf'<{tag}\b[^/]*/?\s*>', '', html, flags=re.I)
-        return html
-
-    def _extract_interactive(self, html: str) -> list:
+        
+    def compress(self, raw_text: str) -> str:
+        # Extract YAML snapshot block from the MCP response
+        yaml_block = self._extract_yaml(raw_text)
+        if not yaml_block:
+            return raw_text  # Fallback: return raw if we can't parse
+        
+        try:
+            tree = yaml.safe_load(yaml_block)
+        except yaml.YAMLError:
+            return raw_text
+        
         lines = []
-        for tag in self.INTERACTIVE:
-            pattern = rf'<{tag}\b([^>]*)>(.*?)</{tag}>'
-            for match in re.finditer(pattern, html, re.DOTALL | re.I):
-                attrs_str, content = match.group(1), match.group(2)
-                attrs = self._parse_attrs(attrs_str)
-                ref = f"e{self.ref_counter}"
-                self.ref_counter += 1
-
-                text = re.sub(r'<[^>]+>', '', content).strip()[:60]
-                label = text or attrs.get('aria-label', '') or attrs.get('placeholder', '') or attrs.get('value', '') or tag
-
-                if tag == 'a':
-                    lines.append(f"[{ref}] LINK: {label} (href: {attrs.get('href', '')})")
-                elif tag == 'button':
-                    lines.append(f"[{ref}] BUTTON: {label}")
-                elif tag == 'input':
-                    lines.append(f"[{ref}] INPUT ({attrs.get('type', 'text')}): placeholder={attrs.get('placeholder', '')} value={attrs.get('value', '')}")
-                elif tag == 'select':
-                    lines.append(f"[{ref}] SELECT: {label}")
-                elif tag == 'textarea':
-                    lines.append(f"[{ref}] TEXTAREA: {label}")
-                elif tag == 'form':
-                    lines.append(f"[{ref}] FORM: action={attrs.get('action', '')}")
-                else:
-                    lines.append(f"[{ref}] {tag.upper()}: {label}")
-        return lines
-
-    def _extract_content(self, html: str) -> list:
-        lines = []
-        for i in range(1, 7):
-            pattern = rf'<h{i}\b[^>]*>(.*?)</h{i}>'
-            for m in re.finditer(pattern, html, re.DOTALL | re.I):
-                text = re.sub(r'<[^>]+>', '', m.group(1)).strip()
-                if text:
-                    lines.append(f"{'#' * i} {text}")
-        paras = re.findall(r'<p\b[^>]*>(.*?)</p>', html, re.DOTALL | re.I)
-        for p in paras[:5]:
-            text = re.sub(r'<[^>]+>', '', p).strip()
-            if len(text) > 20:
-                lines.append(text[:200] + ('...' if len(text) > 200 else ''))
-        return lines
-
-    def _parse_attrs(self, s: str) -> dict:
-        return {m.group(1).lower(): m.group(2)
-                for m in re.finditer(r'([a-zA-Z0-9\-:]+)\s*=\s*["\']([^"\']*)["\']', s)}
-
-    def _finalize(self, lines: list) -> str:
+        self._walk_tree(tree, lines, depth=0)
+        
+        return self._finalize(lines, raw_text)
+    
+    def _extract_yaml(self, text: str) -> str:
+        """Extract the YAML snapshot between ```yaml and ```."""
+        match = re.search(r'```yaml\n(.*?)\n```', text, re.DOTALL)
+        if match:
+            return match.group(1)
+        # Also try without code fences
+        if 'Snapshot' in text and '[ref=' in text:
+            # Find the YAML-like part
+            lines = text.split('\n')
+            yaml_lines = []
+            in_yaml = False
+            for line in lines:
+                if line.strip().startswith('- ') or line.strip().startswith('  '):
+                    yaml_lines.append(line)
+                    in_yaml = True
+                elif in_yaml and line.strip():
+                    break
+            return '\n'.join(yaml_lines)
+        return ""
+    
+    def _walk_tree(self, node, lines, depth=0):
+        """Recursively walk the YAML tree and extract interactive elements + structure."""
+        if isinstance(node, list):
+            for item in node:
+                self._walk_tree(item, lines, depth)
+        elif isinstance(node, dict):
+            for key, value in node.items():
+                # key is like "generic [ref=e2]" or "button \"Search\" [ref=e34]"
+                ref = self._extract_ref(key)
+                tag = self._extract_tag(key)
+                text = self._extract_text(key)
+                
+                # Skip purely structural containers at deep levels
+                if tag in ('generic', 'banner', 'navigation', 'main', 'contentinfo', 'complementary'):
+                    if depth > 2 and not ref:
+                        # Deep structural noise, skip unless it has children
+                        if isinstance(value, (list, dict)) and value:
+                            self._walk_tree(value, lines, depth + 1)
+                        continue
+                
+                # Interactive elements — ALWAYS keep with ref
+                if tag in ('button', 'link', 'textbox', 'combobox', 'searchbox', 
+                           'checkbox', 'radio', 'menuitem', 'tab', 'menuitemcheckbox',
+                           'menuitemradio', 'option', 'listbox', 'slider', 'spinbutton',
+                           'switch', 'treeitem', 'gridcell', 'cell', 'heading'):
+                    
+                    label = text or self._extract_label_from_children(value)
+                    ref_id = ref or f"e{self.ref_counter}"
+                    if not ref:
+                        self.ref_counter += 1
+                    
+                    if tag == 'link':
+                        href = self._extract_href(value)
+                        lines.append(f"[{ref_id}] LINK: {label} (href: {href})")
+                    elif tag in ('textbox', 'searchbox', 'combobox'):
+                        lines.append(f"[{ref_id}] INPUT ({tag}): {label}")
+                    elif tag == 'button':
+                        lines.append(f"[{ref_id}] BUTTON: {label}")
+                    elif tag in ('heading',):
+                        level = self._extract_heading_level(key)
+                        lines.append(f"{'#' * level} {label}")
+                    else:
+                        lines.append(f"[{ref_id}] {tag.upper()}: {label}")
+                
+                # Content elements — keep if near top or have text
+                elif tag in ('paragraph', 'text', 'StaticText', 'label', 'img', 'image'):
+                    if text and len(text) > 3:
+                        lines.append(text[:120])
+                
+                # Recurse into children
+                if isinstance(value, (list, dict)):
+                    self._walk_tree(value, lines, depth + 1)
+                    
+        elif isinstance(node, str):
+            if len(node.strip()) > 3 and len(node.strip()) < 200:
+                lines.append(node.strip())
+    
+    def _extract_ref(self, key: str) -> str:
+        match = re.search(r'\[ref=([^\]]+)\]', key)
+        return match.group(1) if match else ""
+    
+    def _extract_tag(self, key: str) -> str:
+        # "button \"Search\" [ref=e34]" -> "button"
+        # "generic [ref=e2]" -> "generic"
+        # "link \"Home\" [ref=e5]" -> "link"
+        match = re.match(r'^([a-zA-Z]+)', key.strip())
+        return match.group(1).lower() if match else "unknown"
+    
+    def _extract_text(self, key: str) -> str:
+        # Extract quoted text: "button \"Search\"" -> "Search"
+        match = re.search(r'"([^"]+)"', key)
+        return match.group(1) if match else ""
+    
+    def _extract_label_from_children(self, value) -> str:
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    for k in item.keys():
+                        text = self._extract_text(k)
+                        if text:
+                            return text
+                elif isinstance(item, str):
+                    if item.strip():
+                        return item.strip()[:60]
+        return ""
+    
+    def _extract_href(self, value) -> str:
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        if 'url' in k.lower() or 'href' in k.lower():
+                            if isinstance(v, str):
+                                return v
+        return ""
+    
+    def _extract_heading_level(self, key: str) -> int:
+        # Try to extract level from value or key
+        match = re.search(r'level\s*(\d)', key, re.I)
+        if match:
+            return int(match.group(1))
+        return 2  # Default
+    
+    def _finalize(self, lines: list, raw_text: str) -> str:
+        # Deduplicate while preserving order
         seen = set()
         result = []
         for line in lines:
-            if line not in seen and line.strip():
-                result.append(line)
-                seen.add(line)
+            line = line.strip()
+            if not line or line in seen:
+                continue
+            seen.add(line)
+            result.append(line)
+        
+        # Truncate to token budget
         max_chars = self.max_tokens * 4
         out = '\n'.join(result)
+        
         if len(out) > max_chars:
-            interactive = [l for l in result if l.startswith('[e')]
-            content = [l for l in result if not l.startswith('[e')]
+            # Keep all interactive elements (lines with [ref= or [e)
+            interactive = [l for l in result if re.search(r'\[ref=|\[e\d+\]', l)]
+            content = [l for l in result if not re.search(r'\[ref=|\[e\d+\]', l)]
+            
             out = '\n'.join(interactive)
             remaining = max_chars - len(out) - 100
             for line in content:
@@ -110,8 +189,15 @@ class DOMCompressor:
                 else:
                     break
             out += '\n... [truncated]'
-        return out
-
+        
+        # Add header showing compression
+        raw_tokens = len(raw_text) // 4
+        compressed_tokens = len(out) // 4
+        return (
+            f"--- PAGE SNAPSHOT ({raw_tokens}→{compressed_tokens} est.tokens) ---\n"
+            f"{out}\n"
+            f"--- Use exact refs like [e34] for clicks/typing ---"
+        )
 
 @asynccontextmanager
 async def mcp_session():
