@@ -20,6 +20,7 @@ async def run_task(task: str, arm: str = "with_memory"):
         tools = await get_openai_tools(session)
 
         memory_index = memory.get_memory_index(task) if arm == "with_memory" else "(memory disabled for this run)"
+        logger.set_memory_available(memory_index != "(no relevant past experience found)" and memory_index != "(memory disabled for this run)")
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -54,6 +55,7 @@ async def run_task(task: str, arm: str = "with_memory"):
 
             if name == "read_skill_file":
                 result_text = memory.read_skill_file(arguments["path"])
+                logger.log_memory_file_read(arguments["path"])
                 logger.log_step(step, name, arguments, result_text, tokens_used=tokens_used)
                 messages.append({
                     "role": "tool",
@@ -66,7 +68,12 @@ async def run_task(task: str, arm: str = "with_memory"):
                 success = arguments.get("success", False)
                 reason = arguments.get("reason", "")
 
-                if success and arguments.get("skill_site") and arguments.get("skill_name"):
+                if (
+                    success
+                    and not logger.memory_available
+                    and arguments.get("skill_site")
+                    and arguments.get("skill_name")
+                ):
                     memory.save_skill(
                         task=task,
                         site=arguments["skill_site"],

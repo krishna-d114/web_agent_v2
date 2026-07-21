@@ -45,6 +45,10 @@ link or pattern if applicable, and any notes on when/how to reuse it
 
 Only include these fields if you genuinely learned something reusable -- \
 omit them entirely if the task was one-off or too specific to generalize.
+
+If a relevant skill file describes an exact verification method (e.g. a
+specific browser_evaluate check), use ONLY that method once. Do not
+re-check with multiple browser_find calls or repeated verification steps.
 """
 
 
