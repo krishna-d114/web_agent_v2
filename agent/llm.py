@@ -11,7 +11,7 @@ client = OpenAI(
 )
 
 # Adjust to whatever cheap, tool-calling-capable model you settle on.
-MODEL = "tencent/hy3:free"
+MODEL = "cohere/north-mini-code:free"
 
 SYSTEM_PROMPT = """You are a browser automation agent. You complete tasks by \
 calling the provided browser tools one at a time.
@@ -52,17 +52,29 @@ re-check with multiple browser_find calls or repeated verification steps.
 """
 
 
-def get_next_action(messages: list[dict], tools: list[dict]):
-    """
-    Sends the conversation so far to the LLM and returns its response.
-    The caller is responsible for extracting tool_calls from it.
-    """
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=tools,
-        tool_choice="required",
-        temperature=0,
-        extra_body={"reasoning": {"exclude": True}},
-    )
-    return response.choices[0].message,response.usage.total_tokens
+import time
+
+def get_next_action(messages: list[dict], tools: list[dict], max_retries: int = 4):
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=messages,
+                tools=tools,
+                tool_choice="required",
+                temperature=0,
+                extra_body={"reasoning": {"exclude": True}},
+            )
+            if response.choices is None:
+                raise RuntimeError(f"No choices returned: {response.model_dump_json()}")
+            return response.choices[0].message, response.usage.total_tokens
+
+        except Exception as e:
+            if "429" in str(e) or "rate" in str(e).lower():
+                wait = 2 ** attempt  # 1, 2, 4, 8 seconds
+                print(f"[rate limited, retrying in {wait}s...]")
+                time.sleep(wait)
+                continue
+            raise
+
+    raise RuntimeError("Max retries exceeded on rate-limited request")

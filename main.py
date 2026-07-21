@@ -2,6 +2,7 @@ import asyncio
 import time
 import uuid
 import json
+from pathlib import Path
 
 from agent.mcp_client import mcp_session, get_openai_tools, call_mcp_tool
 from agent.llm import get_next_action, SYSTEM_PROMPT
@@ -21,6 +22,13 @@ async def run_task(task: str, arm: str = "with_memory"):
 
         memory_index = memory.get_memory_index(task) if arm == "with_memory" else "(memory disabled for this run)"
         logger.set_memory_available(memory_index != "(no relevant past experience found)" and memory_index != "(memory disabled for this run)")
+
+        print("\n--- MEMORY DEBUG ---")
+        print(f"arm: {arm}")
+        print(f"long_term.txt raw contents:\n{Path('memory/long_term.txt').read_text() if Path('memory/long_term.txt').exists() else '(file does not exist)'}")
+        print(f"get_memory_index() returned:\n{memory_index}")
+        print(f"memory_available flag set to: {logger.memory_available}")
+        print("--- END MEMORY DEBUG ---\n")
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -54,6 +62,7 @@ async def run_task(task: str, arm: str = "with_memory"):
             })
 
             if name == "read_skill_file":
+                print(f"[MEMORY] LLM requested skill file: {arguments['path']}")
                 result_text = memory.read_skill_file(arguments["path"])
                 logger.log_memory_file_read(arguments["path"])
                 logger.log_step(step, name, arguments, result_text, tokens_used=tokens_used)
