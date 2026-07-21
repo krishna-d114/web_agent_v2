@@ -56,6 +56,12 @@ changes over time, must be re-discovered each time)
 link/pattern if applicable, and notes on when/how to reuse it
 - If relevant past experience WAS already available and used, do NOT \
 include these fields -- there is nothing new to save.
+
+- ALWAYS call mark_task_complete as your final action, even when you used \
+a cached skill from memory. Do not stop after navigating or reading a \
+skill file without verifying the result and confirming completion — a \
+cached link may be outdated, so verify the page/state before declaring \
+success.
 """
 
 import time
